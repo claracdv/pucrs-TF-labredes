@@ -4,10 +4,16 @@ import java.net.InetAddress;
 
 public class ServidorUDP {
     public static void main(String args[]) throws Exception {
+        while (true) {
+            Servidor();
+        }
+    };
+
+    public static void Servidor() throws Exception {
         // Cria socket do servidor com a porta 9876
         DatagramSocket serverSocket = new DatagramSocket(9876);
-        byte[] receiveData = new byte[1024];
-        byte[] sendData = new byte[1024];
+        byte[] receiveData = new byte[300];
+        byte[] sendData = new byte[300];
         // Loop infinito para receber e responder mensagens
         while (true) {
             // Declara o pacote a ser recebido

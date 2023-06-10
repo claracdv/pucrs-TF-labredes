@@ -6,6 +6,13 @@ import java.net.InetAddress;
 
 public class ClienteUDP {
     public static void main(String args[]) throws Exception {
+        while (true) {
+            Cliente();
+            System.out.println("Transferência enviada pelo cliente!");
+        }
+    };
+
+    public static void Cliente() throws Exception {
         // Cria o stream do teclado
         BufferedReader inFromUser = new BufferedReader(new InputStreamReader(System.in));
         // Declara socket cliente
@@ -13,8 +20,11 @@ public class ClienteUDP {
         // Endereço IP do servidor
         InetAddress IPAddress = InetAddress.getByName("localhost");
 
-        byte[] sendData = new byte[1024];
-        byte[] receiveData = new byte[1024];
+        final int TIMEOUT = 2000;
+        final int DUPLICATE_ACK_THRESHOLD = 3;
+
+        byte[] sendData = new byte[300];
+        byte[] receiveData = new byte[300];
 
         System.out.println("Digite uma mensagem: ");
         // Lê uma linha do teclado
