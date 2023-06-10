@@ -1,163 +1,462 @@
-import java.io.*;
-import java.net.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketTimeoutException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.stream.Collectors;
 import java.util.*;
+import java.util.zip.CRC32;
 
 public class Sender {
-    private static final int WINDOW_SIZE = 10;
-    private static final int TIMEOUT = 2000;
-    private static final int DUPLICATE_ACK_THRESHOLD = 3;
 
-    private String ipAddress;
-    private int port;
-    private String filename;
+    static List<PacketInfo> packets = new ArrayList<>();
 
-    public static void main(String[] args) {
-        // Inicia o remetente
-        Sender sender = new Sender();
-        sender.startTransfer();
-    
-        System.out.println("Transferência concluída!");
+    static final int SLOW_START_MAX_DATA_PACKAGES = 2;
+    static final char FILE_END_DELIMITER_CHAR = '|';
+
+    private static String ipAddress;
+    private static InetAddress address;
+    private static int port;
+    private static String filename;
+
+    static Map<Integer, Integer> acksReplicados = new HashMap<>();
+
+    static DatagramSocket socket;
+  
+
+    public static void main(String[] args) throws Exception {
+        ipAddress = "127.0.0.1"; // Endereço IP do destinatário
+        port = 9876; // Porta utilizada na comunicação
+        filename = "file.txt"; // Nome do arquivo a ser transferido
+
+        startConnection();
     }
 
-    public Sender() {
-        this.ipAddress = "127.0.0.1"; // Endereço IP do destinatário
-        this.port = 9876; // Porta utilizada na comunicação
-        this.filename = "file.txt"; // Nome do arquivo a ser transferido
+    public static void startConnection() throws Exception {
+        address = InetAddress.getByName(ipAddress);
+
+        socket = new DatagramSocket();
+        System.out.println("Iniciou a conexão do sender...");
+
+        //Definindo timeout pro socket (neste caso é 3 segundos)
+        socket.setSoTimeout(3*1000);
+
+        System.out.println("\nConexão estabelecida!");
+
+        createPackets();
+
+        //neste momento, temos todos os pacotes criados, tudo pronto pra enviar para o server
+        int listIterator = initializeSlowStart(SLOW_START_MAX_DATA_PACKAGES);
+
+        if (listIterator >= packets.size()) {
+            System.out.println("ja enviou tudo, nao precisa do avoidance");
+        } else {
+            congestionAvoidance(listIterator);
+            System.out.println("\nConexão encerrada!");
+        }
     }
 
-    public void startTransfer() {
+
+    public static int initializeSlowStart(int packageLimit) throws Exception {
+        int pacotesParaEnviar = 1;
+
+        int listIterator = 0;
+
+        int actualPackageLimit = 1;
+        int packetCalculo = 1;
+        while (packetCalculo != packageLimit) {
+            packetCalculo *= 2;
+            actualPackageLimit = actualPackageLimit * 2 + 1;
+        }
+
+        List<String> acksReceived = new ArrayList<String>();
+
+        PacketInfo info;
+
         try {
-            InetAddress address = InetAddress.getByName(ipAddress);
-            DatagramSocket socket = new DatagramSocket();
-            System.out.println("Iniciou a conexão do sender...");
-
-            byte[] fileData = readFileData(filename);
-            List<Packet> packets = createPackets(fileData);
-
-            int base = 0; // Base do window
-            int nextSeqNum = 0; // Próximo número de sequência a ser enviado
-            int lastAckReceived = -1; // Último ACK recebido
-            int duplicateAckCount = 0; // Contador de ACKs duplicados
-
-            while (base < packets.size()) {
-                // Envio dos pacotes dentro do window
-                for (int i = base; i < Math.min(base + WINDOW_SIZE, packets.size()); i++) {
-                    Packet packet = packets.get(i);
-                    sendPacket(socket, packet, address, port);
-                }
-
-                // Recebimento de ACKs
-                DatagramPacket ackPacket = receiveAck(socket);
-                int ackNumber = extractAckNumber(ackPacket);
-                System.out.println("Ack number: " + ackNumber);
-                
-                if (ackNumber == lastAckReceived) {
-                    System.out.println("Ack duplicado");
-                    // Recebido um ACK duplicado
-                    duplicateAckCount++;
-
-                    if (duplicateAckCount >= DUPLICATE_ACK_THRESHOLD) {
-                        System.out.println("Ack duplicado 3 vezes");
-                        // Retransmissão imediata do pacote
-                        handleDuplicateAcks(socket, packets.get(lastAckReceived), address, port);
-                        duplicateAckCount = 0;
+            while (pacotesParaEnviar <= actualPackageLimit) {
+                for (listIterator = listIterator; listIterator < pacotesParaEnviar; listIterator++) {
+                    try {
+                        info = packets.get(listIterator);
+                    } catch (Exception ex) {
+                        //acabou de iterar, enviou tudo
+                        break;
                     }
-                    continue;
+
+                    sendPacket(info);
+
+                    PacketResponse response = receivePacket();
+
+                    acksReceived.add("recebe response: " + response.getMessage() + ":" + response.getSeq());
+
                 }
 
-                lastAckReceived = ackNumber;
-                duplicateAckCount = 0;
-
-                if (ackNumber == packets.size() - 1) {
-                    System.out.println("Todos os pacotes foram enviados");
-                    // Todos os pacotes foram confirmados, transferência concluída
-                    break;
+                for (int i = 0; i < acksReceived.size(); i++) {
+                    System.out.println(acksReceived.get(i));
                 }
 
-                if (ackNumber > base) {
-                    // Movimento da janela deslizante
-                    base = ackNumber;
-                    nextSeqNum = base + 1;
+                acksReceived = new ArrayList<String>();
 
-                    // Reinicia o timer
-                    socket.setSoTimeout(TIMEOUT);
+                pacotesParaEnviar = pacotesParaEnviar * 2 + 1;
+            }
+        } catch (SocketTimeoutException ex) {
+            for (int i = 0; i < acksReceived.size(); i++) {
+                System.out.println(acksReceived.get(i));
+            }
+
+            acksReceived = new ArrayList<String>();
+
+            System.out.println("Timeout");
+            System.out.println("Reenviando pacote...");
+
+            initializeSlowStart(SLOW_START_MAX_DATA_PACKAGES);
+
+        }
+        return listIterator;
+    }
+
+    public static void congestionAvoidance(int listIterator) throws Exception {
+        System.out.println("Cheguei no congestionAvoidance");
+
+        PacketInfo packetInfo = null;
+
+        PacketResponse response = null;
+
+        List<String> acksReceived = new ArrayList<String>();
+
+        int quantPacketSend = SLOW_START_MAX_DATA_PACKAGES + 1;
+
+        try {
+            while (packets.size() != listIterator) {
+
+                for (int i = 0; i < quantPacketSend; i++) {
+
+                    try {
+                        packetInfo = packets.get(listIterator);
+                    } catch (Exception ex) {
+                        //acabou de iterar, enviou tudo
+                        break;
+                    }
+
+                    sendPacket(packetInfo);
+                    response = receivePacket();
+
+                    checkReplicateAck(response, packetInfo.getSeq());
+
+                    acksReceived.add("recebe response: " + response.getMessage() + ":" + response.getSeq());
+
+                    listIterator++;
                 }
 
-                // Verifica se há pacotes atrasados
-                if (nextSeqNum < packets.size()) {
-                    System.out.println("Achou um pacote atrasado");
-                    // Envio do próximo pacote
-                    Packet packet = packets.get(nextSeqNum);
-                    sendPacket(socket, packet, address, port);
-                    nextSeqNum++;
+                for (int i = 0; i < acksReceived.size(); i++) {
+                    System.out.println(acksReceived.get(i));
+                }
+
+                acksReceived = new ArrayList<String>();
+
+                quantPacketSend++;
+            }
+
+            String finalServerResponse = response.getMessage().trim();
+
+            if (packetInfo.isFinalPacket()) {
+                while (!finalServerResponse.equals("FINISHED")) {
+                    System.out.println("FALTOU ALGUM PACOTE NO CAMINHO, CONVERSANDO COM SERVER PRA VER QUAL");
+
+                    finalServerResponse = sendLastMissingPackets();
                 }
             }
 
-            socket.close();
-            System.out.println("Conexão do sender encerrada.");
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (SocketTimeoutException ex) {
+
+
+            for (int i = 0; i < acksReceived.size(); i++) {
+                System.out.println(acksReceived.get(i));
+            }
+
+            acksReceived = new ArrayList<String>();
+
+            System.out.println("Timeout");
+            System.out.println("Reenviando pacote...");
+
+            acksReplicados.clear();
+            initializeSlowStart(SLOW_START_MAX_DATA_PACKAGES);
+
         }
     }
 
+    public static void checkReplicateAck(PacketResponse response, int seqSent) throws Exception {
+        //ACK replicado, deu pau..
+        if (seqSent != response.getSeq() - 1) {
 
+            int replicado = response.getSeq();
 
-    private byte[] readFileData(String filename) throws IOException {
-        File file = new File(filename);
-        byte[] fileData = new byte[(int) file.length()];
-        try (FileInputStream fileInputStream = new FileInputStream(file)) {
-            fileInputStream.read(fileData);
+            if (!acksReplicados.containsKey(replicado)) {
+                acksReplicados.put(replicado, 1);
+            } else {
+                acksReplicados.put(replicado, acksReplicados.get(replicado) + 1);
+            }
+
+            List<Integer> packetsLostSeqNumber = acksReplicados.entrySet().stream()
+                    //se ja tiver 3 ou mais acks na lista...
+                    .filter(x -> x.getValue() >= 3)
+                    //pega a key (seq do pacote perdido)...
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toList());
+
+            if (!packetsLostSeqNumber.isEmpty()) {
+                //value aqui é o seq do pacote perdido
+                for (int seq : packetsLostSeqNumber) {
+                    PacketInfo packet = packets
+                            .stream()
+                            .filter(x -> x.getSeq() == seq)
+                            .findFirst()
+                            .orElseThrow(() -> new Exception("Não foi encontrado o pacote que falhou no envio"));
+
+                    //UTILIZADO APENAS PARA DADOS MOCKADOS
+                    if (packet == null) {
+                        if (seq == 4) {
+                            packet = new PacketInfo(new byte[]{4, 4, 4, 4}, 123453252, seq);
+                        }
+
+                        if (seq == 5) {
+                            packet = new PacketInfo(new byte[]{5, 5, 5, 5}, 123453252, seq);
+                        }
+
+                        if (seq == 6) {
+                            packet = new PacketInfo(new byte[]{6, 6, 6, 6}, 123453252, seq);
+                        }
+
+                        if (seq == 7) {
+                            packet = new PacketInfo(new byte[]{7, 7, 7, 7}, 123453252, seq);
+                        }
+
+                        if (seq == 11) {
+                            packet = new PacketInfo(new byte[]{11, 11, 11, 11}, 123453252, seq);
+                        }
+
+                        if (seq == 12) {
+                            packet = new PacketInfo(new byte[]{12, 12, 12, 12}, 123453252, seq);
+                        }
+                    }
+
+                    System.out.println("REENVIANDO PACOTE QUE FOI PERDIDO - SEQ[" + replicado + "]");
+
+                    sendPacket(packet);
+
+                    System.out.println("PACOTE QUE HAVIA FALHADO RECEBIDO COM SUCESSO!");
+
+                    //removendo que este pacote da lista de pacotes perdidos
+                    acksReplicados.remove(seq);
+                }
+            }
         }
-        return fileData;
     }
 
-    private List<Packet> createPackets(byte[] fileData) {
-        List<Packet> packets = new ArrayList<>();
-        int sequenceNumber = 0;
-        int offset = 0;
-        System.out.println("Criando pacotes...");
-        while (offset < fileData.length) {
-            int length = Math.min(Packet.MAX_PACKET_SIZE, fileData.length - offset);
-            byte[] packetData = Arrays.copyOfRange(fileData, offset, offset + length);
-            Packet packet = new Packet(sequenceNumber, packetData);
-            packets.add(packet);
-            sequenceNumber++;
-            offset += length;
+    //método responsavel por enviar pacotes que tenham falhado pouco antes do ultimo pacote ser enviado
+    public static String sendLastMissingPackets() throws Exception{
+        PacketResponse newResponse = null;
+
+        List<Integer> packetsLostSeqNumber = acksReplicados.entrySet().stream()
+                //se ja tiver 1 ou mais acks na lista...
+                .filter(x -> x.getValue() >= 1)
+                //pega a key (seq do pacote perdido)...
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+
+        if (!packetsLostSeqNumber.isEmpty()) {
+
+            //seq aqui é o seq do pacote perdido
+            for (int seq : packetsLostSeqNumber) {
+                PacketInfo packet = packets
+                        .stream()
+                        .filter(x -> x.getSeq() == seq)
+                        .findFirst()
+                        .orElseThrow(() -> new Exception("Não foi encontrado o pacote que falhou no envio"));
+
+                //PARA UTILIZAR DADOS MOCKADOS, NÃO É NECESSARIO PARA EXECUÇÃO FINAL
+                if (packet == null) {
+                    if (seq == 1) {
+                        packet = new PacketInfo(new byte[]{1,1,1,1}, 123453252, seq);
+                    }
+
+                    if (seq == 2) {
+                        packet = new PacketInfo(new byte[]{2,2,2,2}, 123453252, seq);
+                    }
+
+                    if (seq == 3) {
+                        packet = new PacketInfo(new byte[]{3,3,3,3}, 123453252, seq);
+                    }
+
+                    if (seq == 4) {
+                        packet = new PacketInfo(new byte[]{4, 4, 4, 4}, 123453252, seq);
+                    }
+
+                    if (seq == 5) {
+                        packet = new PacketInfo(new byte[]{5, 5, 5, 5}, 123453252, seq);
+                    }
+
+                    if (seq == 6) {
+                        packet = new PacketInfo(new byte[]{6, 6, 6, 6}, 123453252, seq);
+                    }
+
+                    if (seq == 7) {
+                        packet = new PacketInfo(new byte[]{7, 7, 7, 7}, 123453252, seq);
+                    }
+
+                    if (seq == 8) {
+                        packet = new PacketInfo(new byte[]{8,8,8,8}, 123453252, seq);
+                    }
+
+                    if (seq == 9) {
+                        packet = new PacketInfo(new byte[]{9,9,9,9}, 123453252, seq);
+                    }
+
+                    if (seq == 10) {
+                        packet = new PacketInfo(new byte[]{10,10,10,10}, 123453252, seq);
+                    }
+
+                    if (seq == 11) {
+                        packet = new PacketInfo(new byte[]{11, 11, 11, 11}, 123453252, seq);
+                    }
+
+                    if (seq == 12) {
+                        packet = new PacketInfo(new byte[]{12, 12, 12, 12}, 123453252, seq);
+                    }
+                }
+
+
+                System.out.println("REENVIANDO PACOTE QUE FOI PERDIDO - SEQ[" + seq + "]");
+
+                sendPacket(packet);
+
+                newResponse = receivePacket();
+
+                if(!newResponse.getMessage().trim().equals("FINISHED")){
+                    acksReplicados.remove(seq);
+                    acksReplicados.put(newResponse.getSeq(), 3);
+
+                    sendLastMissingPackets();
+                }
+
+                System.out.println("PACOTE QUE HAVIA FALHADO RECEBIDO COM SUCESSO!");
+
+                //removendo que este pacote foi perdido
+                acksReplicados.remove(seq);
+
+                return newResponse.getMessage();
+            }
         }
-        System.out.println("Pacotes criados");
-        return packets;
+
+        return "FINISHED";
     }
 
-    private void sendPacket(DatagramSocket socket, Packet packet, InetAddress address, int port) throws IOException {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        DataOutputStream dataOutputStream = new DataOutputStream(outputStream);
-        dataOutputStream.writeInt(packet.getSequenceNumber());
-        dataOutputStream.writeInt(packet.getChecksum());
-        dataOutputStream.writeInt(packet.getData().length);
-        dataOutputStream.write(packet.getData());
-        dataOutputStream.flush();
-        byte[] sendData = outputStream.toByteArray();
+    public static PacketResponse parseResponseMessage(DatagramPacket message) {
+        String[] split = new String(message.getData()).split("-");
 
-        DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, address, port);
+        if (split[0].trim().equals("FINISHED")) {
+            //nao importa o seq aqui, pq é o ultimo pacote do server
+            return new PacketResponse(split[0], 1);
+        }
+
+        return new PacketResponse(split[0], Integer.parseInt(split[1].trim()));
+    }
+
+    public static void sendPacket(PacketInfo packet) throws Exception {
+        String message = "";
+
+        if (packet.isFinalPacket()) {
+            message = Arrays.toString(packet.getFileData()) + "-" + packet.getCRC() + "-" + packet.getSeq() + "-" + packet.isFinalPacket();
+        } else {
+            message = Arrays.toString(packet.getFileData()) + "-" + packet.getCRC() + "-" + packet.getSeq();
+        }
+
+        System.out.println("enviando mensagem: " + message);
+
+        byte[] packetData = message.getBytes();
+
+        DatagramPacket sendPacket = new DatagramPacket(packetData, packetData.length, address, port);
+
         socket.send(sendPacket);
-        System.out.println("Enviou o pacote - seq: " + packet.getSequenceNumber() + " checksum: " + packet.getChecksum() + " tamanho: " + packet.getData().length);
     }
 
-    private DatagramPacket receiveAck(DatagramSocket socket) throws IOException {
-        byte[] receiveData = new byte[4];
-        DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+    public static PacketResponse receivePacket() throws Exception {
+        byte[] responseData = new byte[1024];
+
+        DatagramPacket receivePacket = new DatagramPacket(responseData, responseData.length, address, port);
+
         socket.receive(receivePacket);
-        return receivePacket;
+
+        PacketResponse response = parseResponseMessage(receivePacket);
+
+        return response;
     }
 
-    private int extractAckNumber(DatagramPacket ackPacket) throws IOException {
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(ackPacket.getData());
-        DataInputStream dataInputStream = new DataInputStream(inputStream);
-        return dataInputStream.readInt();
+    public static long calculaCRC(byte[] array) {
+        CRC32 crc = new CRC32();
+
+        crc.update(array);
+
+        long valor = crc.getValue();
+
+        return valor;
     }
 
-    private void handleDuplicateAcks(DatagramSocket socket, Packet packet, InetAddress address, int port) throws IOException {
-        // Realiza a retransmissão imediata do pacote
-        sendPacket(socket, packet, address, port);
+    public static void createPackets() throws Exception {
+        //le o caminho do arquivo
+        Path path = Paths.get(filename);
+
+        //monta uma lista com todas as linhas
+        List<String> fileContent = Files.readAllLines(path);
+
+        //caso utilizar execução em MOCK, colocar esse valor como o proximo  seq number a ser enviado.
+        int numeroSequencia = 1;
+
+        //coloca na lista de dados de cada packet o que deve ser enviado, em ordem
+        //IMPORTANTE: esse método leva em conta que todas linhas do arquivo possuem 300 bytes (300 caracteres), assim como é visto no case1, dentro da folder input,
+        //comportamentos inesperados podem ocorrer caso essa condição não seja verdadeira
+        for (int i = 0; i < fileContent.size(); i++) {
+
+            String content = fileContent.get(i);
+            System.out.println(content.toCharArray());
+            final int MAX_BYTES = 300;
+
+            if (content.toCharArray().length < MAX_BYTES) {
+                char[] contentBytes = new char[MAX_BYTES];
+                char[] contentChars = content.toCharArray();
+
+                for (int j = 0; j < contentChars.length; j++) {
+                    contentBytes[j] = contentChars[j];
+                }
+
+                System.out.println(content.toCharArray());
+
+                //Este método adiciona delimiters para os ultimos pacotes que nao tem 300 bytes terem delimitador
+                for (int j = contentChars.length; j < MAX_BYTES; j++) {
+                    contentBytes[j] = FILE_END_DELIMITER_CHAR;
+                }
+
+                content = new String(contentBytes);
+
+            }
+
+            byte[] arrayBytes = content.getBytes();
+
+            //realizando calculo do CRC
+            long crc = calculaCRC(arrayBytes);
+
+            PacketInfo packet = new PacketInfo(arrayBytes, crc, numeroSequencia);
+
+            //Aqui definimos o pacote final a ser enviado
+            if(fileContent.size() - 1 == i){
+                packet.setFinalPacket(true);
+            }
+
+            packets.add(packet);
+
+            numeroSequencia++;
+        }
     }
 }
