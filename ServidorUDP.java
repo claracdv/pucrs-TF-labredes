@@ -16,6 +16,9 @@ public class ServidorUDP {
             serverSocket.receive(receivePacket);
             // Pega os dados, o endereço IP e a porta do cliente
             String sentence = new String(receivePacket.getData());
+
+            System.out.println("RECEIVED: " + sentence);
+
             InetAddress IPAddress = receivePacket.getAddress();
             int port = receivePacket.getPort();
             // Converte a string em maiúsculo
@@ -23,6 +26,7 @@ public class ServidorUDP {
             // Cria o pacote com o dado modificado
             sendData = capitalizedSentence.getBytes();
             DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, port);
+            System.out.println("SENDING: " + capitalizedSentence);
             // Envia o pacote modificado para o cliente
             serverSocket.send(sendPacket);
         }
