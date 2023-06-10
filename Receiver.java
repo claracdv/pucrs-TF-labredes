@@ -71,7 +71,7 @@ public class Receiver {
     }
 
     private DatagramPacket receivePacket(DatagramSocket socket) throws IOException {
-        System.out.println("Tentando receber pacote");
+        System.out.println("Tentando receber pacote...");
         byte[] buffer = new byte[Packet.MAX_PACKET_SIZE];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
         socket.receive(packet);
@@ -95,11 +95,13 @@ public class Receiver {
         byte[] data = packet.getData();
         CRC32 crc32 = new CRC32();
         crc32.update(data, Packet.HEADER_SIZE, packet.getLength() - Packet.HEADER_SIZE);
+    
+        // Corrigir o cálculo do checksum
         long calculatedChecksum = crc32.getValue();
-
-        int receivedChecksum =
-                ((data[2] & 0xFF) << 24) | ((data[3] & 0xFF) << 16) | ((data[4] & 0xFF) << 8) | (data[5] & 0xFF);
-
+        int receivedChecksum = ((data[2] & 0xFF) << 24) | ((data[3] & 0xFF) << 16) | ((data[4] & 0xFF) << 8) | (data[5] & 0xFF);
+        
+        System.out.println("Calculated checksum: " + calculatedChecksum);
+        System.out.println("Received checksum: " + receivedChecksum);
         return calculatedChecksum == receivedChecksum;
     }
 

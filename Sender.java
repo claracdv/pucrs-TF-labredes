@@ -3,7 +3,6 @@ import java.net.*;
 import java.util.*;
 
 public class Sender {
-    private static final int PACKET_SIZE = 300;
     private static final int WINDOW_SIZE = 10;
     private static final int TIMEOUT = 2000;
     private static final int DUPLICATE_ACK_THRESHOLD = 3;
@@ -29,7 +28,7 @@ public class Sender {
     public void startTransfer() {
         try {
             InetAddress address = InetAddress.getByName(ipAddress);
-            DatagramSocket socket = new DatagramSocket(port);
+            DatagramSocket socket = new DatagramSocket();
             System.out.println("Iniciou a conexão do sender...");
 
             byte[] fileData = readFileData(filename);
@@ -118,7 +117,7 @@ public class Sender {
         int offset = 0;
         System.out.println("Criando pacotes...");
         while (offset < fileData.length) {
-            int length = Math.min(PACKET_SIZE, fileData.length - offset);
+            int length = Math.min(Packet.MAX_PACKET_SIZE, fileData.length - offset);
             byte[] packetData = Arrays.copyOfRange(fileData, offset, offset + length);
             Packet packet = new Packet(sequenceNumber, packetData);
             packets.add(packet);
