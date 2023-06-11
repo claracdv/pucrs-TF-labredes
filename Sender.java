@@ -21,10 +21,9 @@ public class Sender {
     private static int port;
     private static String filename;
 
-    static Map<Integer, Integer> acksReplicados = new HashMap<>();
+    static Map<Integer, Integer> acksDuplicados = new HashMap<>();
 
     static DatagramSocket socket;
-  
 
     public static void main(String[] args) throws Exception {
         ipAddress = "127.0.0.1"; // Endereço IP do destinatário
@@ -40,14 +39,15 @@ public class Sender {
         socket = new DatagramSocket();
         System.out.println("Iniciou a conexão do sender...");
 
-        //Definindo timeout pro socket (neste caso é 3 segundos)
-        socket.setSoTimeout(3*1000);
+        // Definindo timeout pro socket (neste caso é 3 segundos)
+        socket.setSoTimeout(3 * 1000);
 
         System.out.println("\nConexão estabelecida!");
 
         createPackets();
 
-        //neste momento, temos todos os pacotes criados, tudo pronto pra enviar para o server
+        // neste momento, temos todos os pacotes criados, tudo pronto pra enviar para o
+        // server
         int listIterator = initializeSlowStart(SLOW_START_MAX_DATA_PACKAGES);
 
         if (listIterator >= packets.size()) {
@@ -57,7 +57,6 @@ public class Sender {
             System.out.println("\nConexão encerrada!");
         }
     }
-
 
     public static int initializeSlowStart(int packageLimit) throws Exception {
         int pacotesParaEnviar = 1;
@@ -81,7 +80,7 @@ public class Sender {
                     try {
                         info = packets.get(listIterator);
                     } catch (Exception ex) {
-                        //acabou de iterar, enviou tudo
+                        // acabou de iterar, enviou tudo
                         break;
                     }
 
@@ -136,14 +135,14 @@ public class Sender {
                     try {
                         packetInfo = packets.get(listIterator);
                     } catch (Exception ex) {
-                        //acabou de iterar, enviou tudo
+                        // acabou de iterar, enviou tudo
                         break;
                     }
 
                     sendPacket(packetInfo);
                     response = receivePacket();
 
-                    checkReplicateAck(response, packetInfo.getSeq());
+                    checkDuplicatedAck(response, packetInfo.getSeq());
 
                     acksReceived.add("recebe response: " + response.getMessage() + ":" + response.getSeq());
 
@@ -171,7 +170,6 @@ public class Sender {
 
         } catch (SocketTimeoutException ex) {
 
-
             for (int i = 0; i < acksReceived.size(); i++) {
                 System.out.println(acksReceived.get(i));
             }
@@ -181,33 +179,33 @@ public class Sender {
             System.out.println("Timeout");
             System.out.println("Reenviando pacote...");
 
-            acksReplicados.clear();
+            acksDuplicados.clear();
             initializeSlowStart(SLOW_START_MAX_DATA_PACKAGES);
 
         }
     }
 
-    public static void checkReplicateAck(PacketResponse response, int seqSent) throws Exception {
-        //ACK replicado, deu pau..
+    public static void checkDuplicatedAck(PacketResponse response, int seqSent) throws Exception {
+        // ACK duplicado, problema..
         if (seqSent != response.getSeq() - 1) {
 
-            int replicado = response.getSeq();
+            int duplicado = response.getSeq();
 
-            if (!acksReplicados.containsKey(replicado)) {
-                acksReplicados.put(replicado, 1);
+            if (!acksDuplicados.containsKey(duplicado)) {
+                acksDuplicados.put(duplicado, 1);
             } else {
-                acksReplicados.put(replicado, acksReplicados.get(replicado) + 1);
+                acksDuplicados.put(duplicado, acksDuplicados.get(duplicado) + 1);
             }
 
-            List<Integer> packetsLostSeqNumber = acksReplicados.entrySet().stream()
-                    //se ja tiver 3 ou mais acks na lista...
+            List<Integer> packetsLostSeqNumber = acksDuplicados.entrySet().stream()
+                    // se ja tiver 3 ou mais acks na lista...
                     .filter(x -> x.getValue() >= 3)
-                    //pega a key (seq do pacote perdido)...
+                    // pega a key (seq do pacote perdido)...
                     .map(Map.Entry::getKey)
                     .collect(Collectors.toList());
 
             if (!packetsLostSeqNumber.isEmpty()) {
-                //value aqui é o seq do pacote perdido
+                // value aqui é o seq do pacote perdido
                 for (int seq : packetsLostSeqNumber) {
                     PacketInfo packet = packets
                             .stream()
@@ -215,60 +213,61 @@ public class Sender {
                             .findFirst()
                             .orElseThrow(() -> new Exception("Não foi encontrado o pacote que falhou no envio"));
 
-                    //UTILIZADO APENAS PARA DADOS MOCKADOS
+                    // UTILIZADO APENAS PARA DADOS MOCKADOS
                     if (packet == null) {
                         if (seq == 4) {
-                            packet = new PacketInfo(new byte[]{4, 4, 4, 4}, 123453252, seq);
+                            packet = new PacketInfo(new byte[] { 4, 4, 4, 4 }, 123453252, seq);
                         }
 
                         if (seq == 5) {
-                            packet = new PacketInfo(new byte[]{5, 5, 5, 5}, 123453252, seq);
+                            packet = new PacketInfo(new byte[] { 5, 5, 5, 5 }, 123453252, seq);
                         }
 
                         if (seq == 6) {
-                            packet = new PacketInfo(new byte[]{6, 6, 6, 6}, 123453252, seq);
+                            packet = new PacketInfo(new byte[] { 6, 6, 6, 6 }, 123453252, seq);
                         }
 
                         if (seq == 7) {
-                            packet = new PacketInfo(new byte[]{7, 7, 7, 7}, 123453252, seq);
+                            packet = new PacketInfo(new byte[] { 7, 7, 7, 7 }, 123453252, seq);
                         }
 
                         if (seq == 11) {
-                            packet = new PacketInfo(new byte[]{11, 11, 11, 11}, 123453252, seq);
+                            packet = new PacketInfo(new byte[] { 11, 11, 11, 11 }, 123453252, seq);
                         }
 
                         if (seq == 12) {
-                            packet = new PacketInfo(new byte[]{12, 12, 12, 12}, 123453252, seq);
+                            packet = new PacketInfo(new byte[] { 12, 12, 12, 12 }, 123453252, seq);
                         }
                     }
 
-                    System.out.println("REENVIANDO PACOTE QUE FOI PERDIDO - SEQ[" + replicado + "]");
+                    System.out.println("REENVIANDO PACOTE QUE FOI PERDIDO - SEQ[" + duplicado + "]");
 
                     sendPacket(packet);
 
                     System.out.println("PACOTE QUE HAVIA FALHADO RECEBIDO COM SUCESSO!");
 
-                    //removendo que este pacote da lista de pacotes perdidos
-                    acksReplicados.remove(seq);
+                    // removendo que este pacote da lista de pacotes perdidos
+                    acksDuplicados.remove(seq);
                 }
             }
         }
     }
 
-    //método responsavel por enviar pacotes que tenham falhado pouco antes do ultimo pacote ser enviado
-    public static String sendLastMissingPackets() throws Exception{
+    // método responsavel por enviar pacotes que tenham falhado pouco antes do
+    // ultimo pacote ser enviado
+    public static String sendLastMissingPackets() throws Exception {
         PacketResponse newResponse = null;
 
-        List<Integer> packetsLostSeqNumber = acksReplicados.entrySet().stream()
-                //se ja tiver 1 ou mais acks na lista...
+        List<Integer> packetsLostSeqNumber = acksDuplicados.entrySet().stream()
+                // se ja tiver 1 ou mais acks na lista...
                 .filter(x -> x.getValue() >= 1)
-                //pega a key (seq do pacote perdido)...
+                // pega a key (seq do pacote perdido)...
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
 
         if (!packetsLostSeqNumber.isEmpty()) {
 
-            //seq aqui é o seq do pacote perdido
+            // seq aqui é o seq do pacote perdido
             for (int seq : packetsLostSeqNumber) {
                 PacketInfo packet = packets
                         .stream()
@@ -276,57 +275,56 @@ public class Sender {
                         .findFirst()
                         .orElseThrow(() -> new Exception("Não foi encontrado o pacote que falhou no envio"));
 
-                //PARA UTILIZAR DADOS MOCKADOS, NÃO É NECESSARIO PARA EXECUÇÃO FINAL
+                // PARA UTILIZAR DADOS MOCKADOS, NÃO É NECESSARIO PARA EXECUÇÃO FINAL
                 if (packet == null) {
                     if (seq == 1) {
-                        packet = new PacketInfo(new byte[]{1,1,1,1}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 1, 1, 1, 1 }, 123453252, seq);
                     }
 
                     if (seq == 2) {
-                        packet = new PacketInfo(new byte[]{2,2,2,2}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 2, 2, 2, 2 }, 123453252, seq);
                     }
 
                     if (seq == 3) {
-                        packet = new PacketInfo(new byte[]{3,3,3,3}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 3, 3, 3, 3 }, 123453252, seq);
                     }
 
                     if (seq == 4) {
-                        packet = new PacketInfo(new byte[]{4, 4, 4, 4}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 4, 4, 4, 4 }, 123453252, seq);
                     }
 
                     if (seq == 5) {
-                        packet = new PacketInfo(new byte[]{5, 5, 5, 5}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 5, 5, 5, 5 }, 123453252, seq);
                     }
 
                     if (seq == 6) {
-                        packet = new PacketInfo(new byte[]{6, 6, 6, 6}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 6, 6, 6, 6 }, 123453252, seq);
                     }
 
                     if (seq == 7) {
-                        packet = new PacketInfo(new byte[]{7, 7, 7, 7}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 7, 7, 7, 7 }, 123453252, seq);
                     }
 
                     if (seq == 8) {
-                        packet = new PacketInfo(new byte[]{8,8,8,8}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 8, 8, 8, 8 }, 123453252, seq);
                     }
 
                     if (seq == 9) {
-                        packet = new PacketInfo(new byte[]{9,9,9,9}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 9, 9, 9, 9 }, 123453252, seq);
                     }
 
                     if (seq == 10) {
-                        packet = new PacketInfo(new byte[]{10,10,10,10}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 10, 10, 10, 10 }, 123453252, seq);
                     }
 
                     if (seq == 11) {
-                        packet = new PacketInfo(new byte[]{11, 11, 11, 11}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 11, 11, 11, 11 }, 123453252, seq);
                     }
 
                     if (seq == 12) {
-                        packet = new PacketInfo(new byte[]{12, 12, 12, 12}, 123453252, seq);
+                        packet = new PacketInfo(new byte[] { 12, 12, 12, 12 }, 123453252, seq);
                     }
                 }
-
 
                 System.out.println("REENVIANDO PACOTE QUE FOI PERDIDO - SEQ[" + seq + "]");
 
@@ -334,17 +332,17 @@ public class Sender {
 
                 newResponse = receivePacket();
 
-                if(!newResponse.getMessage().trim().equals("FINISHED")){
-                    acksReplicados.remove(seq);
-                    acksReplicados.put(newResponse.getSeq(), 3);
+                if (!newResponse.getMessage().trim().equals("FINISHED")) {
+                    acksDuplicados.remove(seq);
+                    acksDuplicados.put(newResponse.getSeq(), 3);
 
                     sendLastMissingPackets();
                 }
 
                 System.out.println("PACOTE QUE HAVIA FALHADO RECEBIDO COM SUCESSO!");
 
-                //removendo que este pacote foi perdido
-                acksReplicados.remove(seq);
+                // removendo que este pacote foi perdido
+                acksDuplicados.remove(seq);
 
                 return newResponse.getMessage();
             }
@@ -357,7 +355,7 @@ public class Sender {
         String[] split = new String(message.getData()).split("-");
 
         if (split[0].trim().equals("FINISHED")) {
-            //nao importa o seq aqui, pq é o ultimo pacote do server
+            // nao importa o seq aqui, pq é o ultimo pacote do server
             return new PacketResponse(split[0], 1);
         }
 
@@ -368,7 +366,8 @@ public class Sender {
         String message = "";
 
         if (packet.isFinalPacket()) {
-            message = Arrays.toString(packet.getFileData()) + "-" + packet.getCRC() + "-" + packet.getSeq() + "-" + packet.isFinalPacket();
+            message = Arrays.toString(packet.getFileData()) + "-" + packet.getCRC() + "-" + packet.getSeq() + "-"
+                    + packet.isFinalPacket();
         } else {
             message = Arrays.toString(packet.getFileData()) + "-" + packet.getCRC() + "-" + packet.getSeq();
         }
@@ -405,18 +404,21 @@ public class Sender {
     }
 
     public static void createPackets() throws Exception {
-        //le o caminho do arquivo
+        // le o caminho do arquivo
         Path path = Paths.get(filename);
 
-        //monta uma lista com todas as linhas
+        // monta uma lista com todas as linhas
         List<String> fileContent = Files.readAllLines(path);
 
-        //caso utilizar execução em MOCK, colocar esse valor como o proximo  seq number a ser enviado.
+        // caso utilizar execução em MOCK, colocar esse valor como o proximo seq number
+        // a ser enviado.
         int numeroSequencia = 1;
 
-        //coloca na lista de dados de cada packet o que deve ser enviado, em ordem
-        //IMPORTANTE: esse método leva em conta que todas linhas do arquivo possuem 300 bytes (300 caracteres), assim como é visto no case1, dentro da folder input,
-        //comportamentos inesperados podem ocorrer caso essa condição não seja verdadeira
+        // coloca na lista de dados de cada packet o que deve ser enviado, em ordem
+        // IMPORTANTE: esse método leva em conta que todas linhas do arquivo possuem 300
+        // bytes (300 caracteres), assim como é visto no case1, dentro da folder input,
+        // comportamentos inesperados podem ocorrer caso essa condição não seja
+        // verdadeira
         for (int i = 0; i < fileContent.size(); i++) {
 
             String content = fileContent.get(i);
@@ -433,7 +435,8 @@ public class Sender {
 
                 System.out.println(content.toCharArray());
 
-                //Este método adiciona delimiters para os ultimos pacotes que nao tem 300 bytes terem delimitador
+                // Este método adiciona delimiters para os ultimos pacotes que nao tem 300 bytes
+                // terem delimitador
                 for (int j = contentChars.length; j < MAX_BYTES; j++) {
                     contentBytes[j] = FILE_END_DELIMITER_CHAR;
                 }
@@ -444,13 +447,13 @@ public class Sender {
 
             byte[] arrayBytes = content.getBytes();
 
-            //realizando calculo do CRC
+            // realizando calculo do CRC
             long crc = calculaCRC(arrayBytes);
 
             PacketInfo packet = new PacketInfo(arrayBytes, crc, numeroSequencia);
 
-            //Aqui definimos o pacote final a ser enviado
-            if(fileContent.size() - 1 == i){
+            // Aqui definimos o pacote final a ser enviado
+            if (fileContent.size() - 1 == i) {
                 packet.setFinalPacket(true);
             }
 
