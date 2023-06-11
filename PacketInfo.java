@@ -48,7 +48,11 @@ public class PacketInfo {
         this.seq = seq;
     }
 
-    public boolean isFinalPacket() { return finalPacket; }
+    public boolean isFinalPacket() {
+        return finalPacket;
+    }
 
-    public void setFinalPacket(boolean finalPacket) { this.finalPacket = finalPacket; }
+    public void setFinalPacket(boolean finalPacket) {
+        this.finalPacket = finalPacket;
+    }
 }

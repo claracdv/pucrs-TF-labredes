@@ -5,7 +5,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 
-
 class Receiver {
 
     static Map<Integer, byte[]> receivedFileData = new HashMap<>();
@@ -17,50 +16,50 @@ class Receiver {
     public static void main(String args[]) throws Exception {
         System.out.println("Iniciou");
 
-        //estabelecendo que esse socket roda na porta 9876
+        // estabelecendo que esse socket roda na porta 9876
         serverSocket = new DatagramSocket(9876);
 
         int finalPacketSeqNumber;
 
         while (true) {
 
-            //Thread.sleep(1000);
+            // Thread.sleep(1000);
 
             PacketInfo packetInfo = receivePacket();
 
-            //tratamento para o ultimo pacote recebido
+            // tratamento para o ultimo pacote recebido
             if (packetInfo.isFinalPacket()) {
 
                 receivedFileData.put(packetInfo.getSeq(), packetInfo.getFileData());
 
-                //ultimo packet recebido
+                // ultimo packet recebido
                 finalPacketSeqNumber = packetInfo.getSeq();
 
                 int missingPacket = 0;
 
                 do {
-                    //valida se tem algum pacote faltando após ter recebido o ultimo
+                    // valida se tem algum pacote faltando após ter recebido o ultimo
                     missingPacket = checkMissingPackets(finalPacketSeqNumber);
 
                     if (!(missingPacket == 0)) {
-                        System.out.println("TÁ NO PACOTE FINAL, E ALGUM FOI PERDIDO NO MEIO DO CAMINHO, INICIANDO REQUISIÇAO DESSE PACOTE");
+                        System.out.println("Está no pacote final e há pacotes faltando, requisitando novamente...");
 
-                        //missingPacket contém o seq do pacote perdido
-                        //server deve requisitar ele novamente
+                        // missingPacket contém o seq do pacote perdido
+                        // server deve requisitar ele novamente
                         sendResponsePacket("ACK-" + missingPacket, ipAddress, port);
 
                         packetInfo = receivePacket();
 
-                        //calcula o CRC do pacote
+                        // calcula o CRC do pacote
                         long crc = calculaCRC(packetInfo.getFileData());
 
                         if (crc == packetInfo.getCRC()) {
-                            System.out.println("CRC correto, pacote chegou integro");
+                            System.out.println("CRC correto, pacote chegou íntegro");
                         } else {
-                            System.out.println("Algo se perdeu no caminho do pacote");
+                            System.out.println("Elementos perdidos no caminho do pacote");
                         }
 
-                        //se recebeu o packet certo, insere no dicionario com o conteudo do arquivo
+                        // se recebeu o packet certo, insere no dicionario com o conteudo do arquivo
                         if (packetInfo.getSeq() == missingPacket) {
                             receivedFileData.put(packetInfo.getSeq(), packetInfo.getFileData());
                             continue;
@@ -69,42 +68,45 @@ class Receiver {
 
                 } while (missingPacket != 0);
 
-                //após ter recebido tudo, envia um FINISHED para o client e desconecta
+                // após ter recebido tudo, envia um FINISHED para o client e desconecta
                 sendResponsePacket("FINISHED", ipAddress, port);
 
                 System.out.println("TERMINOU DE RECEBER TODOS PACOTES! DESCONECTANDO CLIENT....");
 
-                //começa a manipular os bytes recebidos para salvar o arquivo
+                // começa a manipular os bytes recebidos para salvar o arquivo
                 buildAndValidateFile(finalPacketSeqNumber);
 
                 break;
             }
 
-            //calcula o CRC do pacote
+            // calcula o CRC do pacote
             long crc = calculaCRC(packetInfo.getFileData());
 
             if (crc == packetInfo.getCRC()) {
                 System.out.println("CRC correto, pacote chegou integro");
             } else {
-                System.out.println("Algo se perdeu no caminho do pacote");
+                System.out.println("Elementos perdidos no caminho do pacote");
             }
 
-            //insere no dicionario de pacotes recebidos os dados desse arquivo, com chave = seq number
+            // insere no dicionario de pacotes recebidos os dados desse arquivo, com chave =
+            // seq number
             receivedFileData.put(packetInfo.getSeq(), packetInfo.getFileData());
 
-            //após receber o pacote, verifica se há pacotes faltando
+            // após receber o pacote, verifica se há pacotes faltando
             int missingPacket = checkMissingPackets(packetInfo.getSeq());
 
             if (!(missingPacket == 0)) {
-                //missingPacket contém o pacote perdido
-                //server deve requisitar ele novamente
+                // missingPacket contém o pacote perdido
+                // server deve requisitar ele novamente
                 sendResponsePacket("ACK-" + missingPacket, ipAddress, port);
+                System.out.println("Está no pacote final e há pacotes faltando, requisitando novamente...");
 
                 continue;
             }
 
-            //tudo ok, pacote recebido, envia resposta e espera o próximo
+            // tudo ok, pacote recebido, envia resposta e espera o próximo
             packetInfo.setSeq(packetInfo.getSeq() + 1);
+            System.out.println("Sucesso, aguardando novos pacotes...");
 
             sendResponsePacket("ACK-" + packetInfo.getSeq(), ipAddress, port);
 
@@ -149,24 +151,27 @@ class Receiver {
 
     /**
      * @param seqReceived sequence number recebido no pacote atual
-     * @return 0 se nao há pacotes faltando, senao retorna o sequence number do pacote faltando
+     * @return 0 se nao há pacotes faltando, senao retorna o sequence number do
+     *         pacote faltando
      */
     public static int checkMissingPackets(int seqReceived) {
-        //pega todos os seqs antes do que chegou agora
+        // pega todos os seqs antes do que chegou agora
         List<Integer> lista = receivedFileData.keySet()
                 .stream()
                 .filter(seq -> seq <= seqReceived)
                 .collect(Collectors.toList());
 
-        //verifica se os ultimos pacotes antes do que chegou agora chegaram ok..
+        // verifica se os ultimos pacotes antes do que chegou agora chegaram ok..
         for (int seq = 1; seq <= seqReceived; seq++) {
-            //se um pacote nao chegou, precisa pedir de novo
-            //seq - 1 no lista.get pq os index começam em 0
+            // se um pacote nao chegou, precisa pedir de novo
+            // seq - 1 no lista.get pq os index começam em 0
             if (seq != lista.get(seq - 1)) {
-                return seq;//faltou pacote aqui (i tá faltando)
+                return seq; // faltou pacote aqui (i tá faltando)
 
-                //se o pacote 1 e 2 tiverem faltando, ele vai pedir o 1 até conseguir receber, pra só depois pedir o 2, e assim em diante
-                //como mexe direto no dicionario de dados recebidos, ele vai ficar pedindo o mesmo sempre até receber ele
+                // se o pacote 1 e 2 tiverem faltando, ele vai pedir o 1 até conseguir receber,
+                // pra só depois pedir o 2, e assim em diante
+                // como mexe direto no dicionario de dados recebidos, ele vai ficar pedindo o
+                // mesmo sempre até receber ele
             }
         }
 
@@ -183,15 +188,16 @@ class Receiver {
         packetInfo.setSeq(Integer.parseInt(splitMessage[2].trim()));
 
         try {
-            //Dentro de um try-catch pq só no ultimo pacote vem essa info preenchida como true
+            // Dentro de um try-catch pq só no ultimo pacote vem essa info preenchida como
+            // true
             packetInfo.setFinalPacket(Boolean.parseBoolean(splitMessage[3].trim()));
         } catch (IndexOutOfBoundsException ex) {
-            //é o ultimo pacote...
+            // é o ultimo pacote...
         }
         return packetInfo;
     }
 
-    //monta o fileData do PacketInfo
+    // monta o fileData do PacketInfo
     public static byte[] formatByteArray(String message) {
         String initial = message
                 .replace("[", "")
@@ -225,15 +231,16 @@ class Receiver {
     }
 
     public static void buildAndValidateFile(int finalPacketSeqNumber) throws Exception {
-        //esse método basicamente só remonta o arquivo e pede ao usuario um caminho para salvar em disco
+        // esse método basicamente só remonta o arquivo e pede ao usuario um caminho
+        // para salvar em disco
 
-        //remove os delimiters e salva o arquivo no caminho indicado pelo usuario
+        // remove os delimiters e salva o arquivo no caminho indicado pelo usuario
         byte[] lastPacketReceived = receivedFileData.get(finalPacketSeqNumber);
 
         List<Byte> auxList = new ArrayList<>();
 
         for (int i = 0; i < lastPacketReceived.length; i++) {
-            //124 é o bytecode para o delimiter setado lá no client envia
+            // 124 é o bytecode para o delimiter setado lá no client envia
             if (lastPacketReceived[i] != 124) {
                 auxList.add(lastPacketReceived[i]);
             }
@@ -260,8 +267,8 @@ class Receiver {
         int copyStopped = 0;
         int indexStart = 0;
 
-        for (byte[] value: receivedFileData.values()) {
-            for (indexStart = 0; indexStart < value.length; copyStopped++, indexStart++ ) {
+        for (byte[] value : receivedFileData.values()) {
+            for (indexStart = 0; indexStart < value.length; copyStopped++, indexStart++) {
                 allFileBytes[copyStopped] = value[indexStart];
             }
         }

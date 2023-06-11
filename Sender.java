@@ -27,7 +27,7 @@ public class Sender {
 
     public static void main(String[] args) throws Exception {
         ipAddress = "127.0.0.1"; // Endereço IP do destinatário
-        port = 9876; // Porta utilizada na comunicação
+        port = 9876; // Porta utilizada na comunicaçao
         filename = "file.txt"; // Nome do arquivo a ser transferido
 
         startConnection();
@@ -37,12 +37,12 @@ public class Sender {
         address = InetAddress.getByName(ipAddress);
 
         socket = new DatagramSocket();
-        System.out.println("Iniciou a conexão do sender...");
+        System.out.println("Iniciou a conexao do sender...");
 
         // Definindo timeout pro socket (neste caso é 3 segundos)
         socket.setSoTimeout(3 * 1000);
 
-        System.out.println("\nConexão estabelecida!");
+        System.out.println("\nConexao estabelecida!");
 
         createPackets();
 
@@ -51,10 +51,10 @@ public class Sender {
         int listIterator = initializeSlowStart(SLOW_START_MAX_DATA_PACKAGES);
 
         if (listIterator >= packets.size()) {
-            System.out.println("ja enviou tudo, nao precisa do avoidance");
+            System.out.println("tudo enviado, nao precisa do avoidance...");
         } else {
             congestionAvoidance(listIterator);
-            System.out.println("\nConexão encerrada!");
+            System.out.println("\nConexao encerrada!");
         }
     }
 
@@ -65,6 +65,8 @@ public class Sender {
 
         int actualPackageLimit = 1;
         int packetCalculo = 1;
+
+        // calcula o limite de pacotes que pode enviar
         while (packetCalculo != packageLimit) {
             packetCalculo *= 2;
             actualPackageLimit = actualPackageLimit * 2 + 1;
@@ -74,6 +76,7 @@ public class Sender {
 
         PacketInfo info;
 
+        // envia os pacotes
         try {
             while (pacotesParaEnviar <= actualPackageLimit) {
                 for (listIterator = listIterator; listIterator < pacotesParaEnviar; listIterator++) {
@@ -116,8 +119,9 @@ public class Sender {
         return listIterator;
     }
 
+    // cria os pacotes e adiciona na lista de pacotes
     public static void congestionAvoidance(int listIterator) throws Exception {
-        System.out.println("Cheguei no congestionAvoidance");
+        System.out.println("Chegou no congestionAvoidance!");
 
         PacketInfo packetInfo = null;
 
@@ -162,7 +166,7 @@ public class Sender {
 
             if (packetInfo.isFinalPacket()) {
                 while (!finalServerResponse.equals("FINISHED")) {
-                    System.out.println("FALTOU ALGUM PACOTE NO CAMINHO, CONVERSANDO COM SERVER PRA VER QUAL");
+                    System.out.println("Pacotes faltando, entrando em contato com o servidor para verificar...");
 
                     finalServerResponse = sendLastMissingPackets();
                 }
@@ -186,7 +190,7 @@ public class Sender {
     }
 
     public static void checkDuplicatedAck(PacketResponse response, int seqSent) throws Exception {
-        // ACK duplicado, problema..
+        System.out.println("ACK duplicado, problema detectado...");
         if (seqSent != response.getSeq() - 1) {
 
             int duplicado = response.getSeq();
@@ -211,7 +215,7 @@ public class Sender {
                             .stream()
                             .filter(x -> x.getSeq() == seq)
                             .findFirst()
-                            .orElseThrow(() -> new Exception("Não foi encontrado o pacote que falhou no envio"));
+                            .orElseThrow(() -> new Exception("Nao foi encontrado o pacote que falhou no envio"));
 
                     // UTILIZADO APENAS PARA DADOS MOCKADOS
                     if (packet == null) {
@@ -273,9 +277,9 @@ public class Sender {
                         .stream()
                         .filter(x -> x.getSeq() == seq)
                         .findFirst()
-                        .orElseThrow(() -> new Exception("Não foi encontrado o pacote que falhou no envio"));
+                        .orElseThrow(() -> new Exception("Nao foi encontrado o pacote que falhou no envio."));
 
-                // PARA UTILIZAR DADOS MOCKADOS, NÃO É NECESSARIO PARA EXECUÇÃO FINAL
+                // PARA UTILIZAR DADOS MOCKADOS, NaO É NECESSARIO PARA EXECUÇaO FINAL
                 if (packet == null) {
                     if (seq == 1) {
                         packet = new PacketInfo(new byte[] { 1, 1, 1, 1 }, 123453252, seq);
@@ -404,21 +408,21 @@ public class Sender {
     }
 
     public static void createPackets() throws Exception {
-        // le o caminho do arquivo
+        // lê o caminho do arquivo.
         Path path = Paths.get(filename);
 
         // monta uma lista com todas as linhas
         List<String> fileContent = Files.readAllLines(path);
 
-        // caso utilizar execução em MOCK, colocar esse valor como o proximo seq number
+        // caso utilizar execuçao em MOCK, colocar esse valor como o proximo seq number
         // a ser enviado.
         int numeroSequencia = 1;
 
         // coloca na lista de dados de cada packet o que deve ser enviado, em ordem
         // IMPORTANTE: esse método leva em conta que todas linhas do arquivo possuem 300
         // bytes (300 caracteres), assim como é visto no case1, dentro da folder input,
-        // comportamentos inesperados podem ocorrer caso essa condição não seja
-        // verdadeira
+        // comportamentos inesperados podem ocorrer caso essa condiçao nao seja
+        // verdadeira.
         for (int i = 0; i < fileContent.size(); i++) {
 
             String content = fileContent.get(i);
